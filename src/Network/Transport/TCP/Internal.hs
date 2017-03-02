@@ -13,6 +13,7 @@ module Network.Transport.TCP.Internal
   , encodeWord32
   , tryCloseSocket
   , tryShutdownSocketBoth
+  , ProtocolVersion
   ) where
 
 #if ! MIN_VERSION_base(4,6,0)
@@ -89,6 +90,11 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (length, concat, null)
 import Data.ByteString.Lazy.Internal (smallChunkSize)
 
+-- | Identifies the version of the network-transport-protocol.
+-- It's the first piece of data sent when a new heavyweight connection is
+-- established.
+type ProtocolVersion = Word32
+
 -- | Control headers
 data ControlHeader =
     -- | Tell the remote endpoint that we created a new connection
@@ -126,8 +132,10 @@ encodeControlHeader ch = case ch of
 
 -- | Response sent by /B/ to /A/ when /A/ tries to connect
 data ConnectionRequestResponse =
+    -- | /B/ does not support the version requested by /A/.
+    ConnectionRequestUnsupportedVersion
     -- | /B/ accepts the connection
-    ConnectionRequestAccepted
+  | ConnectionRequestAccepted
     -- | /A/ requested an invalid endpoint
   | ConnectionRequestInvalid
     -- | /A/s request crossed with a request from /B/ (see protocols)
@@ -136,16 +144,18 @@ data ConnectionRequestResponse =
 
 decodeConnectionRequestResponse :: Word32 -> Maybe ConnectionRequestResponse
 decodeConnectionRequestResponse w32 = case w32 of
-  0 -> Just ConnectionRequestAccepted
-  1 -> Just ConnectionRequestInvalid
-  2 -> Just ConnectionRequestCrossed
-  _ -> Nothing
+  0xFFFFFFFF -> Just ConnectionRequestUnsupportedVersion
+  0x00000000 -> Just ConnectionRequestAccepted
+  0x00000001 -> Just ConnectionRequestInvalid
+  0x00000002 -> Just ConnectionRequestCrossed
+  _          -> Nothing
 
 encodeConnectionRequestResponse :: ConnectionRequestResponse -> Word32
 encodeConnectionRequestResponse crr = case crr of
-  ConnectionRequestAccepted -> 0
-  ConnectionRequestInvalid  -> 1
-  ConnectionRequestCrossed  -> 2
+  ConnectionRequestUnsupportedVersion -> 0xFFFFFFFF
+  ConnectionRequestAccepted           -> 0x00000000
+  ConnectionRequestInvalid            -> 0x00000001
+  ConnectionRequestCrossed            -> 0x00000002
 
 -- | Start a server at the specified address.
 --
