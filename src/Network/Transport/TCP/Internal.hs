@@ -191,7 +191,7 @@ forkServer host port backlog reuseAddr terminationHandler requestHandler = do
     acceptRequest :: N.Socket -> IO ()
     acceptRequest sock = bracketOnError (N.accept sock)
                                         (tryCloseSocket . fst)
-                                        (requestHandler)
+                                        requestHandler
 
 -- | Read a length and then a payload of that length, subject to a limit
 --   on the length.
