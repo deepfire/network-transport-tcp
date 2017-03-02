@@ -894,7 +894,13 @@ handleConnectionRequest transport (sock, sockAddr) = handle handleException $ do
     -- and we don't want to allow a peer to deny service to other peers by
     -- claiming to have their host and port.
     unless (theirHost == actualHost) $ do
-      throwIO (userError "handleConnectionRequest: reported host does not match actual host")
+      let errorString = concat [
+              "handleConnectionRequest: reported host "
+            , show theirHost
+            , " does not match actual host "
+            , show actualHost
+            ]
+      throwIO (userError errorString)
     let ourAddress = encodeEndPointAddress (transportHost transport)
                                            (transportPort transport)
                                            ourEndPointId
