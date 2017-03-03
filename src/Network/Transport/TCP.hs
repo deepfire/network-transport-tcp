@@ -615,11 +615,12 @@ apiNewEndPoint transport qdisc =
   try . asyncWhenCancelled closeEndPoint $ do
     ourEndPoint <- createLocalEndPoint transport qdisc
     return EndPoint
-      { receive       = qdiscDequeue (localQueue ourEndPoint)
-      , address       = localAddress ourEndPoint
-      , connect       = apiConnect (transportParams transport) ourEndPoint
-      , closeEndPoint = let evs = [ EndPointClosed ]
-                        in  apiCloseEndPoint transport evs ourEndPoint
+      { receive               = qdiscDequeue (localQueue ourEndPoint)
+      , address               = localAddress ourEndPoint
+      , connect               = apiConnect (transportParams transport) ourEndPoint
+      , closeConnectionTo     = apiCloseConnectionTo ourEndPoint
+      , closeEndPoint         = let evs = [ EndPointClosed ]
+                                in  apiCloseEndPoint transport evs ourEndPoint
       , newMulticastGroup     = return . Left $ newMulticastGroupError
       , resolveMulticastGroup = return . Left . const resolveMulticastGroupError
       }
@@ -785,6 +786,27 @@ apiSend (ourEndPoint, theirEndPoint) connId connAlive payload =
             else throwIO $ TransportError SendClosed "Connection closed"
   where
     sendFailed = TransportError SendFailed . show
+
+-- | Close a socket, severing all lightweight connections to a given peer.
+-- This will induce an 'EventConnectionLost' in the receive queue of the
+-- 'EndPoint'.
+apiCloseConnectionTo
+  :: LocalEndPoint
+  -> EndPointAddress
+  -> IO ()
+apiCloseConnectionTo ourEndPoint theirAddress = do
+  mRemote <- withMVar (localState ourEndPoint) $ \st -> case st of
+    LocalEndPointValid vst -> return (vst ^. localConnectionTo theirAddress)
+    LocalEndPointClosed -> return Nothing
+  case mRemote of
+    Nothing -> return ()
+    Just remote -> withMVar (remoteState remote) $ \st -> case st of
+      -- TODO these should be tryShutdownSocketBoth once PR #49 is in.
+      RemoteEndPointValid vrt ->
+        tryCloseSocket (remoteSocket vrt)
+      RemoteEndPointClosing _ vrt ->
+        tryCloseSocket (remoteSocket vrt)
+      _ -> return ()
 
 -- | Force-close the endpoint
 apiCloseEndPoint :: TCPTransport    -- ^ Transport
