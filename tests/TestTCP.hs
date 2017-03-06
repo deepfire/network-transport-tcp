@@ -17,8 +17,6 @@ import Network.Transport.TCP ( createTransport
                              , createTransportExposeInternals
                              , TransportInternals(..)
                              , TCPParameters(..)
-                             , encodeEndPointAddress
-                             , decodeEndPointAddress
                              , defaultTCPParameters
                              , LightweightConnectionId
                              )
@@ -54,6 +52,8 @@ import Network.Transport.TCP.Internal
   , recvWord32
   , forkServer
   , recvWithLength
+  , encodeEndPointAddress
+  , decodeEndPointAddress
   )
 
 #ifdef USE_MOCK_NETWORK
@@ -173,7 +173,7 @@ testEarlyDisconnect = do
       tlog "Client"
 
       -- Listen for incoming messages
-      (clientPort, _) <- forkServer "127.0.0.1" "0" 5 True throwIO throwIO $ \socketFree sock -> do
+      (clientPort, _) <- forkServer "127.0.0.1" "0" 5 True throwIO throwIO $ \socketFree (sock, _) -> do
         -- Initial setup
         0 <- recvWord32 sock
         _ <- recvWithLength maxBound sock
@@ -285,7 +285,7 @@ testEarlyCloseSocket = do
       tlog "Client"
 
       -- Listen for incoming messages
-      (clientPort, _) <- forkServer "127.0.0.1" "0" 5 True throwIO throwIO $ \socketFree sock -> do
+      (clientPort, _) <- forkServer "127.0.0.1" "0" 5 True throwIO throwIO $ \socketFree (sock, _) -> do
         -- Initial setup
         0 <- recvWord32 sock
         _ <- recvWithLength maxBound sock
@@ -544,13 +544,18 @@ testUnnecessaryConnect numThreads = do
   serverAddr <- newEmptyMVar
 
   forkTry $ do
-    Right transport <- createTransport "127.0.0.1" "0" ((,) "127.0.0.1") defaultTCPParameters
+    Right transport <- createTransport "127.0.0.1" "0" ((,) "128.0.0.1") defaultTCPParameters
     Right endpoint <- newEndPoint transport
-    putMVar serverAddr (address endpoint)
+    -- Since we're lying about the server's address, we have to manually
+    -- construct the proper address. If we used its actual address, the clients
+    -- would try to resolve "128.0.0.1" and then would fail due to invalid
+    -- address.
+    Just (_, port, epid) <- return $ decodeEndPointAddress (address endpoint)
+    putMVar serverAddr $ encodeEndPointAddress "127.0.0.1" port epid
 
   forkTry $ do
-    -- We pick an address < 127.0.0.1 so that this is not rejected purely because of the "crossed" check
-    let ourAddress = EndPointAddress "126.0.0.1"
+    -- We pick an address < 128.0.0.1 so that this is not rejected purely because of the "crossed" check
+    let ourAddress = encodeEndPointAddress "127.0.0.1" "1234" 0
 
     -- We should only get a single 'Accepted' reply
     gotAccepted <- newEmptyMVar
@@ -638,8 +643,7 @@ testReconnect = do
   counter <- newMVar (0 :: Int)
 
   -- Server
-  (serverPort, _) <- forkServer "127.0.0.1" "0" 5 True throwIO throwIO $ \socketFree sock -> do
-
+  (serverPort, _) <- forkServer "127.0.0.1" "0" 5 True throwIO throwIO $ \socketFree (sock, _) -> do
     -- Accept the connection
     Right 0  <- tryIO $ recvWord32 sock
     Right _  <- tryIO $ recvWithLength maxBound sock
@@ -748,7 +752,7 @@ testUnidirectionalError = do
   serverGotPing <- newEmptyMVar
 
   -- Server
-  (serverPort, _) <- forkServer "127.0.0.1" "0" 5 True throwIO throwIO $ \socketFree sock -> do
+  (serverPort, _) <- forkServer "127.0.0.1" "0" 5 True throwIO throwIO $ \socketFree (sock, _) -> do
     -- We accept connections, but when an exception occurs we don't do
     -- anything (in particular, we don't close the socket). This is important
     -- because when we shutdown one direction of the socket a recv here will
