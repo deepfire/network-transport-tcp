@@ -61,6 +61,7 @@ import Network.Transport.TCP.Internal
   , encodeWord32
   , tryCloseSocket
   , tryShutdownSocketBoth
+  , currentProtocolVersion
   )
 import Network.Transport.Internal
   ( prependLength
@@ -1873,7 +1874,7 @@ socketToEndPoint (EndPointAddress ourAddress) theirAddress reuseAddr noDelay kee
         mapIOException failed $ do
           sendMany sock $
               -- The version.
-              encodeWord32 0x000000
+              encodeWord32 currentProtocolVersion
               -- The V0 handshake data with the length prepended.
             : prependLength (encodeWord32 theirEndPointId : prependLength [ourAddress])
           recvWord32 sock
