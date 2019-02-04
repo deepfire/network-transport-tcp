@@ -624,7 +624,7 @@ createTransportExposeInternals addr params = do
                               (tcpReuseServerAddr params)
                               (errorHandler transport)
                               (terminationHandler transport)
-                              (handleConnectionRequest transport))
+                              (handleConnectionRequest transport (errorHandler transport)))
                        (\(_port', tid) -> killThread tid)
                        (\(port'', tid) -> (port'',) <$> mkTransport transport (Just tid))
         return result
@@ -967,8 +967,12 @@ apiCloseEndPoint transport evs ourEndPoint =
 -- the transport down. We must be careful to close the socket when a (possibly
 -- asynchronous, ThreadKilled) exception occurs. (If an exception escapes from
 -- handleConnectionRequest the transport will be shut down.)
-handleConnectionRequest :: TCPTransport -> IO () -> (N.Socket, N.SockAddr) -> IO ()
-handleConnectionRequest transport socketClosed (sock, sockAddr) = handle handleException $ do
+handleConnectionRequest :: TCPTransport
+                        -> (SomeException -> IO ())
+                        -> IO ()
+                        -> (N.Socket, N.SockAddr)
+                        -> IO ()
+handleConnectionRequest transport errorHandler socketClosed (sock, sockAddr) = handle handleException $ do
     when (tcpNoDelay $ transportParams transport) $
       N.setSocketOption sock N.NoDelay 1
     when (tcpKeepAlive $ transportParams transport) $
@@ -1006,6 +1010,7 @@ handleConnectionRequest transport socketClosed (sock, sockAddr) = handle handleE
 
     handleException :: SomeException -> IO ()
     handleException ex = do
+      errorHandler ex
       rethrowIfAsync (fromException ex)
 
     rethrowIfAsync :: Maybe AsyncException -> IO ()
