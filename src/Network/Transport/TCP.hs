@@ -1943,7 +1943,7 @@ findRemoteEndPoint ourEndPoint theirAddress findOrigin mtimer = go
     -- | Like 'readMVar' but it throws an exception if the timer expires.
     readMVarTimeout Nothing mv = readMVar mv
     readMVarTimeout (Just timer) mv = do
-      let connectTimedout = TransportError ConnectTimeout "Timed out"
+      let connectTimedout = TransportError ConnectTimeout "findRemoteEndPoint:  timed out"
       tid <- myThreadId
       bracket (forkIO $ timer >> throwTo tid connectTimedout) killThread $
         const $ readMVar mv
@@ -2079,7 +2079,7 @@ socketToEndPoint mOurAddress theirAddress reuseAddr noDelay keepAlive
     invalidAddress        = TransportError ConnectNotFound . show
     insufficientResources = TransportError ConnectInsufficientResources . show
     failed                = TransportError ConnectFailed . show
-    timeoutError          = TransportError ConnectTimeout "Timed out"
+    timeoutError          = TransportError ConnectTimeout "socketToEndPoint:  timed out"
 
 -- | Construct a ConnectionId
 createConnectionId :: HeavyweightConnectionId
