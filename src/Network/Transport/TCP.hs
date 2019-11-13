@@ -1561,6 +1561,7 @@ setupRemoteEndPoint
   -> Maybe Int
   -> IO (Maybe ConnectionRequestResponse)
 setupRemoteEndPoint transport (ourEndPoint, theirEndPoint) connTimeout = do
+    putStrLn "-1: setupRemoteEndPoint -> socketToEndpoint"
     let mOurAddress = const ourAddress <$> transportAddrInfo transport
     result <- socketToEndPoint mOurAddress
                                theirAddress
@@ -1569,6 +1570,7 @@ setupRemoteEndPoint transport (ourEndPoint, theirEndPoint) connTimeout = do
                                (tcpKeepAlive params)
                                (tcpUserTimeout params)
                                connTimeout
+    putStrLn $ "7: <- socketToEndpoint " <> show theirAddress
     didAccept <- case result of
       -- Since a socket was created, we are now responsible for closing it.
       --
@@ -1588,6 +1590,7 @@ setupRemoteEndPoint transport (ourEndPoint, theirEndPoint) connTimeout = do
                     , _remoteLastIncoming  = 0
                     , _remoteNextConnOutId = firstNonReservedLightweightConnectionId
                     }
+        putStrLn $ "10: setupRemoteEndPoint -> resolveInit " <> show theirAddress
         resolveInit (ourEndPoint, theirEndPoint) (RemoteEndPointValid vst)
         return (Just (socketClosedVar, sock))
       Right (socketClosedVar, sock, ConnectionRequestUnsupportedVersion) -> do
@@ -2044,9 +2047,12 @@ socketToEndPoint mOurAddress theirAddress reuseAddr noDelay keepAlive
     (host, port, theirEndPointId) <- case decodeEndPointAddress theirAddress of
       Nothing  -> throwIO (failed . userError $ "Could not parse")
       Just dec -> return dec
+    putStrLn $ "0: -> getAddrInfo " <> show host <> ":" <> show port
     addr:_ <- mapIOException invalidAddress $
       N.getAddrInfo Nothing (Just host) (Just port)
+    putStrLn $ "1: <- getAddrInfo -> createSocket " <> show host <> ":" <> show port
     bracketOnError (createSocket addr) tryCloseSocket $ \sock -> do
+      putStrLn $ "2: <- createSocket -> setSocketOption " <> show host <> ":" <> show port
       when reuseAddr $
         mapIOException failed $ N.setSocketOption sock N.ReuseAddr 1
       when noDelay $
@@ -2055,9 +2061,11 @@ socketToEndPoint mOurAddress theirAddress reuseAddr noDelay keepAlive
         mapIOException failed $ N.setSocketOption sock N.KeepAlive 1
       forM_ mUserTimeout $
         mapIOException failed . N.setSocketOption sock N.UserTimeout
+      putStrLn $ "3: <- setSocketOption -> connect " <> show host <> ":" <> show port
       response <- timeoutMaybe timeout timeoutError $ do
         mapIOException invalidAddress $
           N.connect sock (N.addrAddress addr)
+        putStrLn $ "4: <- connect -> sendMany " <> show host <> ":" <> show port
         mapIOException failed $ do
           case mOurAddress of
             Just (EndPointAddress ourAddress) ->
@@ -2068,7 +2076,9 @@ socketToEndPoint mOurAddress theirAddress reuseAddr noDelay keepAlive
               sendMany sock $
                   encodeWord32 currentProtocolVersion
                 : prependLength ([encodeWord32 theirEndPointId, encodeWord32 0])
+          putStrLn $ "5: <- sendMany -> recvWord32 " <> show host <> ":" <> show port
           recvWord32 sock
+      putStrLn $ "6: <- recvWord32 " <> show host <> ":" <> show port
       case decodeConnectionRequestResponse response of
         Nothing -> throwIO (failed . userError $ "Unexpected response")
         Just r  -> do
