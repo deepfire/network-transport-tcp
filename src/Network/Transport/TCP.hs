@@ -108,6 +108,8 @@ import Network.Transport.TCP.Mock.Socket.ByteString (sendMany)
 import Network.Socket.ByteString (sendMany)
 #endif
 
+import GHC.Stack
+
 import Control.Concurrent
   ( forkIO
   , ThreadId
@@ -1941,11 +1943,12 @@ findRemoteEndPoint ourEndPoint theirAddress findOrigin mtimer = go
     ourAddress = localAddress ourEndPoint
 
     -- | Like 'readMVar' but it throws an exception if the timer expires.
+    readMVarTimeout :: HasCallStack => Maybe (IO ()) -> MVar () -> IO ()
     readMVarTimeout Nothing mv = readMVar mv
     readMVarTimeout (Just timer) mv = do
       let connectTimedout = TransportError ConnectTimeout "findRemoteEndPoint:  timed out"
       tid <- myThreadId
-      bracket (forkIO $ timer >> throwTo tid connectTimedout) killThread $
+      bracket (forkIO $ timer >> putStrLn (prettyCallStack callStack) >> throwTo tid connectTimedout) killThread $
         const $ readMVar mv
 
 -- | Send a payload over a heavyweight connection (thread safe)
